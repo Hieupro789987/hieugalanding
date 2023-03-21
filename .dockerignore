@@ -1,0 +1,16 @@
+# This is just a comment.
+README.md
+
+node_modules/
+.vscode
+*.DS_Store
+.gitignore
+
+*.md
+.dockerignore
+LICENSE
+.docker
+.gitlab
+.git
+
+cicd/

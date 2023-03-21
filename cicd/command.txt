@@ -1,0 +1,34 @@
+
+-- tạo secret
+kubectl apply -f cicd/config/
+
+-- chạy config
+kubectl apply -f cicd/deployment-production.yml
+
+-- 
+kubectl rollout restart deployment --namespace=green-check-dev green-check-dashboard-dev-deployment
+kubectl rollout restart deployment --namespace=green-check-staging green-check-dashboard-staging-deployment
+kubectl rollout restart deployment --namespace=green-check-production green-check-dashboard-production-deployment
+kubectl rollout restart deployment --namespace=green-check-production green-check-dashboard-production-deployment
+kubectl rollout restart deployment --namespace=green-check-production green-check-dashboard-production-deployment
+
+--
+kubectl get all -n green-check-production
+kubectl get secret -n green-check-production
+-- 
+kubectl get secret regcred --namespace=default -o yaml | sed 's/namespace: .*/namespace: green-check-dev/' | kubectl apply -n green-check-dev -f - &&
+kubectl get secret regcred --namespace=default -o yaml | sed 's/namespace: .*/namespace: green-check-staging/' | kubectl apply -n green-check-staging -f - &&
+kubectl get secret regcred --namespace=default -o yaml | sed 's/namespace: .*/namespace: green-check-main/' | kubectl apply -n green-check-main -f - &&
+kubectl get secret regcred --namespace=default -o yaml | sed 's/namespace: .*/namespace: green-check-production/' | kubectl apply -n green-check-production -f - &&
+kubectl get secret regcred --namespace=default -o yaml | sed 's/namespace: .*/namespace: green-check-demo/' | kubectl apply -n green-check-demo -f - 
+
+kubectl get secret regcred --namespace=default -oyaml | grep -v ^\s*namespace:\s' | kubectl apply --namespace=green-check-production -f -
+
+-- xem secret
+kubectl get secret database-credentials -o jsonpath='{.data.password}' | base64 --decode
+
+
+-- delete all
+kubectl delete all --all -n green-check-dev
+kubectl delete namespace green-check-dev
+kubectl create namespace green-check-production

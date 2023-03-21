@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo FIREBASE_VIEW $FIREBASE_VIEW
+echo "docker build --build-arg FIREBASE_VIEW=$FIREBASE_VIEW -f $DOCKERFILE_PATH -t $IMAGE_NAME ."
+
+docker build \
+    --build-arg FIREBASE_VIEW="$FIREBASE_VIEW" \
+    -f $DOCKERFILE_PATH \
+    -t $IMAGE_NAME .

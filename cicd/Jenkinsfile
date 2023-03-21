@@ -1,0 +1,177 @@
+#!/usr/bin/env groovy
+
+def NG_CONFIG
+def DOCKER_IMAGE_NAME
+def NAMESPACE
+def JENKIN_JIRA_ENVNAME
+pipeline {
+    agent any
+    
+    options {
+        disableConcurrentBuilds() //Disallow concurrent executions of the Pipeline. Can be useful for preventing simultaneous accesses to shared resources
+    }
+    
+    tools {
+        "org.jenkinsci.plugins.docker.commons.tools.DockerTool" "docker"
+//         nodejs "Node14"
+    }
+    
+    environment {
+        DATETIME_TAG = (java.time.LocalDateTime.now()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"))
+        PROJECT_NAMESPACE = "green-check"
+        NAMESPACE = ""
+        PROJECT_NAME = "green-check-dashboard"
+        DOCKER_IMAGE_ORGAN = "greenagri" 
+        DOCKER_IMAGE = "${DOCKER_IMAGE_ORGAN}/${PROJECT_NAME}" 
+        DOCKER_IMAGE_NAME = ""  
+        FIREBASE_VIEW = credentials('FIREBASE_VIEW')
+        REGION_CODE = credentials('REGION_CODE')
+        CLUSTER_NAME = credentials('CLUSTER_NAME')  
+        JENKIN_JIRA_ENVNAME = "unmapped"
+    }
+    
+    stages {
+            stage('Set variables') {
+                parallel {
+                    stage('Set variables for STAGE') {
+                        steps {
+                            script {
+                                branchDelimitted = env.BRANCH_NAME.split('/')
+                                stageName = branchDelimitted[0].trim()
+
+                                switch (stageName) {
+                                    case 'dev':
+                                        NG_CONFIG = 'dev'
+                                        JENKIN_JIRA_ENVNAME = "development"
+                                        break
+                                    case 'staging':
+                                        NG_CONFIG = 'staging'
+                                        JENKIN_JIRA_ENVNAME = "testing"
+                                        break
+                                    case 'main':
+                                        NG_CONFIG = 'main'
+                                        JENKIN_JIRA_ENVNAME = "testing"
+                                        break
+                                    case 'production':
+                                        NG_CONFIG = 'production'
+                                        JENKIN_JIRA_ENVNAME = "production"
+                                        break
+                                    case 'demo':
+                                        NG_CONFIG = 'demo'
+                                        JENKIN_JIRA_ENVNAME = "testing"
+                                        break
+                                }
+                                DOCKER_IMAGE_NAME = "${DOCKER_IMAGE}:${NG_CONFIG}"   
+                                NAMESPACE = "${PROJECT_NAMESPACE}-${NG_CONFIG}"
+                            }
+                        }
+                    }
+
+                    stage('Set notification info') {
+                        steps {
+                            script {
+                                NOTIFICATION_INFORMATION = "---------\n BUILD_TAG ${env.BUILD_TAG} \n PROJECT ${PROJECT_NAME} \n GIT_URL ${env.GIT_URL} \n GIT_BRANCH ${env.GIT_BRANCH} \n GIT_COMMIT ${env.GIT_COMMIT} \n DATETIME_TAG ${DATETIME_TAG} \n ---------"
+                            }
+                        }
+                    }
+                }
+            }
+        
+//             stage('Send START Notification') {
+//                 steps {
+//                     slackSend(color: '#FFFF00', channel: "${SLACK_CHANNEL}", message: "\n *** START TO DEPLOY on *** \n ${NOTIFICATION_INFORMATION}")
+//                 }
+//             }
+        
+            stage('Print variables') {
+                steps {
+                    echo "Jenkins Information ---- EXECUTOR_NUMBER ${env.EXECUTOR_NUMBER}"
+                    echo "Git Information ---- GIT_COMMIT ${env.GIT_COMMIT} --- GIT_URL ${env.GIT_URL} --- GIT_BRANCH ${env.GIT_BRANCH}"
+                    echo "Build Information --- NG_CONFIG ${NG_CONFIG}"
+                    echo "Workspace ---- WORKSPACE ${WORKSPACE}"
+                    echo "Docker image name ---- DOCKER_IMAGE_NAME ${DOCKER_IMAGE_NAME}"
+                }
+            }
+        
+            stage('Build Image') {
+                steps {
+                       script {
+                        //    checkout scm
+                        //    dockerImage = docker.build("${DOCKER_IMAGE_NAME}" , " cicd")
+                           sh "docker build --build-arg FIREBASE_VIEW='${FIREBASE_VIEW}' -f cicd/Dockerfile -t ${DOCKER_IMAGE_NAME} ."
+                       }
+//                     sh 'npm version'
+//                     sh 'npm install'
+//                     sh 'npm audit fix'
+//                     sh 'npm install typescript -g'
+//                     sh 'npm install next react react-dom -g'
+                }
+            }
+        
+            stage('Pushing Image') {
+                environment {
+                    registryCredential = 'DOCKER_HUB_LOGIN'
+                    DOCKER_HUB = credentials('DOCKER_HUB_LOGIN')
+                }
+                steps {
+                    script {
+                        sh "docker login -u $DOCKER_HUB_USR -p $DOCKER_HUB_PSW"
+                        sh "docker image push ${DOCKER_IMAGE_NAME}"
+                        // sh "docker tag ${DOCKER_IMAGE_NAME} ${DOCKER_IMAGE_NAME}-${DATETIME_TAG}"
+                        // sh "docker image push ${DOCKER_IMAGE_NAME}-${DATETIME_TAG}"
+                        sh "docker logout"
+                        //  docker.withRegistry(registryCredential){
+                            //  sh "docker image push ${DOCKER_IMAGE_NAME}"
+                            // dockerImage.push()
+                        // }
+                    }
+                }
+            }
+        
+            stage("Deploy") {
+                steps {
+                    withAWS([credentials: 'AWS credentials', region:'ap-southeast-1']) {
+                            sh "aws eks --region ${REGION_CODE} update-kubeconfig --name ${CLUSTER_NAME}"
+                            // sh "aws eks --region ap-southeast-1 update-kubeconfig --name gat"
+                            sh "kubectl apply -f cicd/deployment-${NG_CONFIG}.yaml"
+                            sh "kubectl rollout restart deployment --namespace=${PROJECT_NAMESPACE}-${NG_CONFIG} ${PROJECT_NAME}-${NG_CONFIG}"
+                    }
+//                     slackSend(channel: "${SLACK_CHANNEL}", message: "Copying built code to EC2", sendAsText: true)
+                }
+                post {
+                    always {
+                        jiraSendDeploymentInfo environmentId: "eks-${CLUSTER_NAME}-${NG_CONFIG}", environmentName: "${NG_CONFIG}", environmentType: "${JENKIN_JIRA_ENVNAME}"
+                    }
+                }
+            }
+        
+            // stage('Cleanup') {
+            //     steps {
+            //         echo 'Removing unused docker containers and images..'
+            //         echo "also remove multi-stage image layer caching docker"
+            //         sh 'docker system prune -f'
+            //     }
+            // }
+    }
+    
+    post {
+         always {
+                /* Clean Jenkins Workspace */
+                dir('..') {
+                    sh "rm -rf ${env.WORKSPACE}/*"
+                }
+
+                /* Use slackNotifier.groovy from shared library and provide current build result as parameter */
+
+                script {
+                    COLOR_MAP = ['SUCCESS': 'good', 'FAILURE': 'danger', 'UNSTABLE': 'danger', 'ABORTED': 'danger']
+                    BUILD_FAILURE_CAUSE='=='
+                    if (currentBuild.currentResult=='FAILURE') {
+                        BUILD_FAILURE_CAUSE = currentBuild.getBuildCauses()
+                    }
+//                     slackSend(color: COLOR_MAP[currentBuild.currentResult], channel: "${SLACK_CHANNEL}", message: "END DEPLOYMENT with status ${currentBuild.currentResult} \n ${BUILD_FAILURE_CAUSE} \n ${NOTIFICATION_INFORMATION}")
+                }
+           }
+     }
+}
+

@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "QTU68GQMW6.com.app.greencheck",
+        "paths": ["*"]
+      }
+    ]
+  }
+}

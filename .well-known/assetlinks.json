@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.app.greencheck",
+      "sha256_cert_fingerprints": [
+        "EC:A2:8D:EF:14:89:3F:38:25:25:26:C7:8C:7B:D8:25:C3:03:3D:3D:1D:8E:BF:D2:F6:52:D5:44:13:CB:47:16"
+      ]
+    }
+  }
+]

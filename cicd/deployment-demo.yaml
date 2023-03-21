@@ -1,0 +1,141 @@
+---
+# Source: test/templates/namespace.yaml
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: green-check-demo
+  labels:
+    name: green-check-demo
+---
+# Source: test/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: green-check-dashboard-demo
+  namespace: green-check-demo
+  labels:
+    helm.sh/chart: test-0.1.0
+    app.kubernetes.io/name: green-check-dashboard-demo
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5555
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: green-check-dashboard-demo
+    app.kubernetes.io/instance: release-name
+---
+# Source: test/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: green-check-dashboard-demo
+  namespace: green-check-demo
+  labels:
+    helm.sh/chart: test-0.1.0
+    app.kubernetes.io/name: green-check-dashboard-demo
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: green-check-dashboard-demo
+      app.kubernetes.io/instance: release-name
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: green-check-dashboard-demo
+        app.kubernetes.io/instance: release-name
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      serviceAccountName: default
+      securityContext:
+        {}
+      containers:
+        - name: test
+          securityContext:
+            {}
+          image: "greenagri/green-check-dashboard:demo"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 5555
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            requests:
+              cpu: 1m
+              memory: 128Mi
+          envFrom:
+            - secretRef:
+                name: green-check-dashboard-demo-secret
+---
+# Source: test/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: green-check-dashboard-demo
+  namespace: green-check-demo
+  labels:
+    helm.sh/chart: test-0.1.0
+    app.kubernetes.io/name: green-check-dashboard-demo
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cluster-issuer
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - "dashboard.greencheck-demo.mcom.app"
+      secretName: dashboard-greencheck-demo-mcom-app-tls
+  rules:
+    - host: "dashboard.greencheck-demo.mcom.app"
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: green-check-dashboard-demo
+                port:
+                  number: 5555
+---
+# Source: test/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "green-check-dashboard-demo-test-connection"
+  namespace: green-check-demo
+  labels:
+    helm.sh/chart: test-0.1.0
+    app.kubernetes.io/name: green-check-dashboard-demo
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['green-check-dashboard-demo:5555']
+  restartPolicy: Never
